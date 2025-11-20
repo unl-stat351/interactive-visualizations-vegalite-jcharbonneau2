@@ -1,6 +1,6 @@
 ---
 title: "Homework: Interactive Visualization with Vega-Lite"
-author: "Your Name"
+author: "Jo Charbonneau"
 format: html
 theme: cosmo
 ---
@@ -34,21 +34,22 @@ write.csv(users, "data/users.csv")
 
 ```{ojs}
 // Imports
-d3 = require("d3@7")
 import {Inputs} from "@observablehq/inputs"
+Plot = require("@observablehq/plot")
+d3 = require("d3@7")
 
-// Load color_ranks.csv (preferred) or sample fallback
-raw = await FileAttachment("data/color_ranks.csv").csv({typed: false});
+// Load color_ranks.csv
+raw = await d3.csv("data/color_ranks.csv");
 
 // Parse hex -> RGB/HSL
 colors = raw.map(d => {
   const hex = d.hex?.trim();
-  const name = d.color ?? d.name ?? d.Color ?? "unknown";
+  const name = d.color ?? d.name ?? "unknown";
   const c = d3.color(hex);
   const hsl = d3.hsl(c);
   return {
     color: name,
-    hex,
+    hex: hex,
     rank: +d.rank,
     r: c?.r ?? NaN,
     g: c?.g ?? NaN,
@@ -56,30 +57,36 @@ colors = raw.map(d => {
     h: ((hsl?.h ?? NaN) + 360) % 360,
     s: (hsl?.s ?? NaN) * 100,
     l: (hsl?.l ?? NaN) * 100
-  }
-}).filter(d => d.hex && !Number.isNaN(d.h) && !Number.isNaN(d.l))
+  };
+}).filter(d => d.hex && !Number.isNaN(d.h) && !Number.isNaN(d.l));
 
-
-// Parse hex -> RGB/HSL and compute a hue family bucket
-allColors = raw.map(d => {
-  const hex = d.hex?.trim();
-  const name = d.color ?? d.name ?? d.Color ?? "unknown";
-  const c = d3.color(hex);
-  const hsl = d3.hsl(c);
-  const h = ((hsl?.h ?? NaN) + 360) % 360;
-  const s = (hsl?.s ?? NaN) * 100;
-  const l = (hsl?.l ?? NaN) * 100;
-  const family = (s < 10 || l > 95) ? "Grays/Whites" :
-    (h < 15 || h >= 345) ? "Reds" :
-    (h < 45) ? "Oranges" :
-    (h < 70) ? "Yellows" :
-    (h < 170) ? "Greens" :
-    (h < 200) ? "Cyans" :
-    (h < 255) ? "Blues" :
-    (h < 290) ? "Purples" :
-    (h < 330) ? "Pinks" : "Reds";
-  return {color: name, hex, rank: +d.rank, r: c?.r ?? NaN, g: c?.g ?? NaN, b: c?.b ?? NaN, h, s, l, family}
-}).filter(d => d.hex)
+// Add hue families
+allColors = colors.map(d => {
+  const h = d.h, s = d.s, l = d.l;
+  let family;
+  if (s < 10 || l > 95) family = "Grays/Whites";
+  else if (h < 15 || h >= 345) family = "Reds";
+  else if (h < 45) family = "Oranges";
+  else if (h < 70) family = "Yellows";
+  else if (h < 170) family = "Greens";
+  else if (h < 200) family = "Cyans";
+  else if (h < 255) family = "Blues";
+  else if (h < 290) family = "Purples";
+  else if (h < 330) family = "Pinks";
+  else family = "Reds";
+  return {
+    color: d.color,
+    hex: d.hex,
+    rank: d.rank,
+    r: d.r,
+    g: d.g,
+    b: d.b,
+    h: d.h,
+    s: d.s,
+    l: d.l,
+    family: family
+  };
+});
 ```
 
 # Interactive Exploration
@@ -138,11 +145,14 @@ Plot.plot({
 
 Can you think of a better way to display this data, potentially using similar selectors? Describe the changes you'd make. 
 
-> 
+> Something that could be done is adding a 'max saturation' slider, as at the moment we only filter by minimul saturation. a maximum saturation slider could sllow us to focus on a specific saturation band, helping to reveal patterns that can be hidden when very dull/very bright colors might take over the graph. We could also use faceting or small multiples, maybe splitting the plot by hues. Another way to improve would be using a 2D density plot, which could keep the interactivity but reduce overplotting. 
 
 Is your proposed graphic supported by vega-lite? Why or why not? (You can provide links to documentation/stackOverflow)
 
-> 
+> Yes, most of these ideas are fully supported:
+  Facets: https://vega.github.io/vega-lite/docs/facet.html
+  Sliders: https://vega.github.io/vega-lite/docs/selection.html
+While density plots is not directly supported by Vega-lite, this can be generated in R/JavaScript and can be fed in. 
 
 
 ## Adding selectors
@@ -157,20 +167,21 @@ Wire your `maxSat2` selector to the plot, using the chunk below, which I've edit
 viewof space2 = Inputs.select(["HSL", "RGB"], {label: "Color space (axes)", value: "HSL"})
 // selector for color saturation/intensity
 viewof minSat2 = Inputs.range([0, 100], {label: "Min saturation (%)", value: 0, step: 1})
+viewof maxSat2 = Inputs.range([0, 100], {label: 'Max Saturation (%)', value: 100, step: 1})
 
 
 // filter out points based on saturation
-filtered2 = colors.filter(d => d.s >= minSat2)
+filtered2 = colors.filter(d => d.s >= minSat2 && d.s <= maxSat2)
 
 // Create an x variable that's conditional on what is selected,
 // changing both the values and the label accordingly
-xAccessor2 = space === "HSL" ? (d) => d.h : (d) => d.r
-xLabel2 = space === "HSL" ? "Hue (°)" : "Red (0–255)"
+xAccessor2 = space2 === "HSL" ? (d) => d.h : (d) => d.r
+xLabel2 = space2 === "HSL" ? "Hue (°)" : "Red (0–255)"
 
 // Create a y variable that's conditional on what is selected,
 // changing both the values and the label accordingly
-yAccessor2 = space === "HSL" ? (d) => d.l : (d) => d.g
-yLabel2 = space === "HSL" ? "Lightness (%)" : "Green (0–255)"
+yAccessor2 = space2 === "HSL" ? (d) => d.l : (d) => d.g
+yLabel2 = space2 === "HSL" ? "Lightness (%)" : "Green (0–255)"
 ```
 
 ```{ojs}
@@ -185,7 +196,6 @@ Plot.plot({
         fill: (d) => d.hex,
         stroke: "#333", strokeWidth: 0.5, r: 5, // and defaults
         tip: true,
-        // title = tooltip text. use both color name and hex value
         title: d => `${d.color} (${d.hex})
   HSL: ${d.h.toFixed(0)}, ${d.s.toFixed(0)}%, ${d.l.toFixed(0)}%
   RGB: ${d.r}, ${d.g}, ${d.b}`
